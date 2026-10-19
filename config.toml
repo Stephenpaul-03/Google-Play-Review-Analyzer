@@ -1,0 +1,24 @@
+# Shared settings for every app. Each app's own settings (package ID, countries, categories)
+# live in apps/<name>.toml; any section below can also be overridden there.
+
+default_app = ""                  # app profile used when you don't pass --app, e.g. "myapp"
+
+[scrape]
+source = "google_play"            # which sources/<name>.py fetches reviews
+max_reviews_per_country = 5000    # stop after this many raw reviews per country
+page_size = 200                   # reviews requested per page
+sleep_between_pages_sec = 1.5
+since_date = ""                   # "YYYY-MM-DD" to keep only newer reviews; "" = no limit
+keep_ratings = [1, 2, 3, 4]       # star ratings to keep; drop 5-star by default
+min_letters = 10                  # drop reviews with fewer letters than this after cleaning
+max_chars = 2000                  # truncate longer review text to this many characters
+
+[classify]
+engine = "ollama"                 # which engines/<name>.py categorizes reviews
+max_retries = 2                   # extra attempts after a failed or invalid answer
+request_timeout_sec = 120
+temperature = 0                   # 0 gives the most repeatable answers
+
+[engines.ollama]                  # local models via Ollama
+url = "http://localhost:11434"
+model = "qwen2.5:7b-instruct"

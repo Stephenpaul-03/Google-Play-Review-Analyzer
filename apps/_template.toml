@@ -1,0 +1,69 @@
+# App profile. Copy to apps/<name>.toml (or run: python new_app.py <play store url>).
+
+[app]
+app_id = "com.example.app"        # package ID from the Play Store URL (the id= part)
+countries = ["gb"]                # ISO 3166 two-letter codes, lowercase
+lang = "en"                       # review language filter passed to Google
+keep_user_names = false           # true stores and shows reviewers' public display names (personal data)
+
+# Optional per-app overrides of config.toml, for example:
+# [scrape]
+# since_date = "2026-01-01"
+# [engines.ollama]
+# model = "qwen2.5:14b-instruct"
+
+# Categories: replace or extend these with your own (for example your in-house module names).
+# id: stable lowercase_snake_case key, never rename it after categorizing (old rows would stop matching)
+# label: what the dashboard shows
+# description: what the model reads when choosing the category
+# One category must have id = "other".
+
+[[categories]]
+id = "bugs_crashes"
+label = "Bugs & Crashes"
+description = "App crashes, freezes, force closes, shows errors, or a feature does not work"
+
+[[categories]]
+id = "performance_speed"
+label = "Performance"
+description = "App works but is slow, laggy, drains battery, or uses too much data or storage"
+
+[[categories]]
+id = "login_account"
+label = "Login & Account"
+description = "Cannot sign up, log in, receive OTP, reset password, or account is blocked or deleted"
+
+[[categories]]
+id = "payments_billing"
+label = "Payments & Billing"
+description = "Payment fails, money deducted without result, refunds, wrong charges"
+
+[[categories]]
+id = "ui_ux"
+label = "Design & Usability"
+description = "Confusing layout, hard to find things, bad design, unwanted design change"
+
+[[categories]]
+id = "ads_notifications_spam"
+label = "Ads & Notifications"
+description = "Too many ads, pop-ups, notifications, SMS or emails"
+
+[[categories]]
+id = "missing_feature"
+label = "Feature Requests"
+description = "Asks for something the app does not offer"
+
+[[categories]]
+id = "customer_support"
+label = "Customer Support"
+description = "Support is unreachable, slow, or unhelpful"
+
+[[categories]]
+id = "pricing_value"
+label = "Pricing & Value"
+description = "Too expensive, hidden fees, not worth the cost"
+
+[[categories]]
+id = "other"
+label = "Other"
+description = "Any complaint that fits none of the above, or no complaint at all"

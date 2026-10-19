@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+
+# Pipeline outputs
+/data/
+/logs/
+*.bak.csv
+
+# App profiles often contain internal names; only the template is shared.
+# Remove these two lines to commit your team's profiles.
+apps/*.toml
+!apps/_template.toml
+
+# Dashboard
+web/node_modules/
+web/dist/
+
+.DS_Store
