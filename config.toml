@@ -9,6 +9,7 @@ max_reviews_per_country = 5000    # stop after this many raw reviews per country
 page_size = 200                   # reviews requested per page
 sleep_between_pages_sec = 1.5
 since_date = ""                   # "YYYY-MM-DD" to keep only newer reviews; "" = no limit
+min_version = ""                  # e.g. "12.0" keeps only reviews written on that app version or newer; "" = all
 keep_ratings = [1, 2, 3, 4]       # star ratings to keep; drop 5-star by default
 min_letters = 10                  # drop reviews with fewer letters than this after cleaning
 max_chars = 2000                  # truncate longer review text to this many characters

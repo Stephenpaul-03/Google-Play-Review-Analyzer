@@ -84,7 +84,8 @@ class CleaningTests(unittest.TestCase):
         rows, removed = scrape_reviews.clean(raw, config(), since_iso="2026-01-01T00:00:00Z")
         self.assertEqual(len(raw) - sum(removed.values()), len(rows))
         self.assertEqual(removed, {"duplicate review_id": 1, "rating not in keep_ratings": 1,
-                                   "older than since_date": 1, "fewer than min_letters letters": 1})
+                                   "older than since_date": 1, "below min_version": 0,
+                                   "fewer than min_letters letters": 1})
         self.assertEqual([r["review_id"] for r in rows], ["e", "a"])  # newest first
         self.assertEqual(rows[0]["text"], "Line one line two is…")      # whitespace normalized, truncated to 20 + …
         self.assertEqual(rows[1]["country"], "gb")                      # first country kept
@@ -99,6 +100,49 @@ class CleaningTests(unittest.TestCase):
     def test_letters_count_in_any_script(self):
         self.assertGreaterEqual(scrape_reviews.letter_count("ஆப் திறக்கவே இல்லை"), 8)
         self.assertEqual(scrape_reviews.letter_count("😡😡 123 !!!"), 0)
+
+
+class ScopeTests(unittest.TestCase):
+    def test_version_comparison_is_numeric(self):
+        minimum = scrape_reviews.version_key("12.0")
+        self.assertTrue(scrape_reviews.version_at_least("12.10.1", minimum))
+        self.assertTrue(scrape_reviews.version_at_least("12", minimum))
+        self.assertTrue(scrape_reviews.version_at_least("12.8-beta", minimum))
+        self.assertFalse(scrape_reviews.version_at_least("11.99", minimum))
+        self.assertFalse(scrape_reviews.version_at_least("", minimum))
+        self.assertTrue(scrape_reviews.version_at_least("12.10", scrape_reviews.version_key("12.9")))
+
+    def test_min_version_rule_counts(self):
+        raw = [dict(record("a"), app_version="12.1"), dict(record("b"), app_version="11.9"),
+               dict(record("c"), app_version=""), dict(record("d"), app_version="12.10")]
+        rows, removed = scrape_reviews.clean(raw, config(min_version="12.0"), "")
+        self.assertEqual(sorted(r["review_id"] for r in rows), ["a", "d"])
+        self.assertEqual(removed["below min_version"], 2)
+        self.assertEqual(len(raw) - sum(removed.values()), len(rows))
+        rows, removed = scrape_reviews.clean(raw, config(), "")  # unset: every version kept
+        self.assertEqual((len(rows), removed["below min_version"]), (4, 0))
+
+    def test_dashboard_shows_only_reviews_in_current_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_dir, common.DATA_DIR = common.DATA_DIR, Path(tmp)
+            try:
+                cfg = {"app": {"app_id": "com.example.app", "lang": "en", "keep_user_names": False},
+                       "classify": {"engine": "ollama"}, "categories": CATEGORIES, "profile_name": "example"}
+                out = common.data_dir(cfg)
+                cat = {"country": "gb", "rating": "1", "review_date": "2026-02-01T00:00:00Z", "app_version": "12.1",
+                       "thumbs_up": "0", "text": "t", "primary_category": "checkout", "secondary_categories": "",
+                       "is_complaint": "true", "sentiment": "negative", "summary": "s", "model": "m",
+                       "categorized_at": "", "error": ""}
+                common.write_csv(out / "reviews_categorized.csv", categorize_reviews.OUT_COLUMNS,
+                                 [dict(cat, review_id="in"), dict(cat, review_id="out_of_scope")])
+                common.write_csv(out / "reviews_clean.csv", scrape_reviews.CLEAN_COLUMNS, [{"review_id": "in"}])
+                (out / "app_meta.json").write_text(json.dumps({"app_id": "com.example.app", "app_title": "Example"}))
+                data = build_dashboard.build_data(cfg)
+                self.assertEqual([r["review_id"] for r in data["reviews"]], ["in"])
+                self.assertEqual(data["summary"][0]["review_count"], 1)
+                self.assertEqual(len(common.read_csv(out / "reviews_categorized.csv")), 2)  # earlier results kept
+            finally:
+                common.DATA_DIR = saved_dir
 
 
 class AnswerValidationTests(unittest.TestCase):

@@ -160,6 +160,7 @@ def main() -> None:
         except PermissionError:
             fail(EXIT_UNEXPECTED, "reviews_categorized.csv is locked", "close it in Excel and run again")
 
+    clean_ids = {r["review_id"] for r in reviews}  # the current scrape settings define what is in scope
     done_rows = read_csv(out_path) if out_path.exists() else []
     done_ids = {r["review_id"] for r in done_rows}
     warn_changed_categories(done_rows, [c["id"] for c in cfg["categories"]])
@@ -167,7 +168,7 @@ def main() -> None:
     remaining = len(todo)
     if args.limit is not None:
         todo = todo[:args.limit]
-    ui.field("Reviews", f"{ui.number(len(reviews))} clean · {ui.number(len(done_ids))} already done · "
+    ui.field("Reviews", f"{ui.number(len(reviews))} clean · {ui.number(len(done_ids & clean_ids))} already done · "
                         f"{ui.bold(ui.number(len(todo)))} to do now"
                         + (ui.dim(f" (--limit; {ui.number(remaining)} left in total)") if len(todo) < remaining else ""))
     log.info("Resuming: %d already done, %d to go", len(done_ids), len(todo))
@@ -213,7 +214,8 @@ def main() -> None:
         sys.exit(EXIT_STOPPED)
 
     elapsed = bar.finish() if bar else 0
-    all_rows = read_csv(out_path)
+    saved = read_csv(out_path)
+    all_rows = [r for r in saved if r["review_id"] in clean_ids]
     try:
         write_csv(summary_path, SUMMARY_COLUMNS, build_summary(all_rows) if all_rows else [])
     except PermissionError:
@@ -227,7 +229,10 @@ def main() -> None:
     top = [s for s in build_summary(all_rows) if s["category"] not in ("other", UNCLASSIFIED)][:3] if all_rows else []
     if top:
         ui.field("Top", " · ".join(f"{labels.get(s['category'], s['category'])} {s['percent']}%" for s in top))
-    ui.ok(f"Saved {short(out_path)} ({ui.number(len(all_rows))} reviews) and {summary_path.name}")
+    kept = len(saved) - len(all_rows)
+    ui.ok(f"Saved {short(out_path)} ({ui.number(len(all_rows))} reviews in scope) and {summary_path.name}"
+          + (ui.dim(f"; {ui.number(kept)} earlier results outside the current dates/versions are kept for reuse")
+             if kept else ""))
 
 
 if __name__ == "__main__":

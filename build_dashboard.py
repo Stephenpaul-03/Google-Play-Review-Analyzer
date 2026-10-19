@@ -11,6 +11,7 @@ import webbrowser
 from collections import Counter
 
 import ui
+from categorize_reviews import build_summary
 from common import (DATA_DIR, EXIT_MISSING_INPUT, ROOT, data_dir, fail, load_config, log, parse_args, read_csv,
                     run, setup_logging, short, utc_now_iso)
 
@@ -49,7 +50,7 @@ def review_for_page(row: dict, clean: dict, keep_names: bool) -> dict:
 
 
 def summary_for_page(row: dict) -> dict:
-    """A category_summary.csv row with numeric types."""
+    """A summary row (as in category_summary.csv) with numeric types."""
     out = dict(row)
     for key in ("review_count", "total_thumbs_up"):
         out[key] = to_int(row[key])
@@ -66,15 +67,16 @@ def embed_json(data: dict) -> str:
 def build_data(cfg: dict) -> dict:
     """Assemble the dashboard data for one app from the pipeline outputs."""
     out_dir = data_dir(cfg)
-    categorized, summary, meta_path, clean_path = (out_dir / "reviews_categorized.csv",
-                                                   out_dir / "category_summary.csv", out_dir / "app_meta.json",
-                                                   out_dir / "reviews_clean.csv")
-    if not all(p.exists() for p in (categorized, summary, meta_path)):
+    categorized, meta_path, clean_path = (out_dir / "reviews_categorized.csv", out_dir / "app_meta.json",
+                                          out_dir / "reviews_clean.csv")
+    if not all(p.exists() for p in (categorized, meta_path)):
         fail(EXIT_MISSING_INPUT, "No categorized reviews yet",
              f"run: python categorize_reviews.py --app {cfg['profile_name']}")
     app = cfg["app"]
     clean = {r["review_id"]: r for r in read_csv(clean_path)} if clean_path.exists() else {}
     rows = read_csv(categorized)
+    if clean:  # show only reviews in the current scrape scope (dates, versions, ratings)
+        rows = [r for r in rows if r["review_id"] in clean]
     models = Counter(r["model"] for r in rows if r["model"])
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     meta.update({
@@ -90,7 +92,8 @@ def build_data(cfg: dict) -> dict:
         "categories": [{"id": c["id"], "label": c["label"], "description": c["description"]}
                        for c in cfg["categories"]],
         "reviews": [review_for_page(r, clean.get(r["review_id"], {}), app["keep_user_names"]) for r in rows],
-        "summary": [summary_for_page(r) for r in read_csv(summary)],
+        # Recomputed from the in-scope rows so it always matches the reviews shown.
+        "summary": [summary_for_page(r) for r in build_summary(rows)] if rows else [],
     }
 
 

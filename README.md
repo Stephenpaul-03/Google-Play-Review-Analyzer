@@ -1,4 +1,4 @@
-# Review Categorizer
+# Google Play Review Analyzer
 
 Turn an app's public Google Play reviews into a categorized, filterable dashboard.
 
@@ -26,7 +26,8 @@ Each stage sits behind a small plug-in interface, so any of them can be replaced
 You need macOS, Linux or Windows with **Python 3.11+**, **Node 20+** (for the dashboard), and about 5 GB of disk for the default local model.
 
 ```bash
-git clone <this repo> review-categorizer && cd review-categorizer
+git clone https://github.com/Stephenpaul-03/Google-Play-Review-Analyzer.git
+cd Google-Play-Review-Analyzer
 
 # Python environment and dependencies (two packages)
 python3 -m venv .venv
@@ -125,6 +126,7 @@ Review pipeline · myapp  (3 steps)
   − duplicates                            0
   − ratings not in [1, 2, 3, 4]       3,105
   − older than since_date                 0
+  − below min_version                     0
   − shorter than 10 letters             142
     clean reviews                     1,753
   ✓ Saved data/com.example.app/reviews_clean.csv (+ raw and meta files)
@@ -159,7 +161,9 @@ Retries and other detail go to the log file in `logs/`, not the screen. To follo
 | **Re-categorize without re-scraping** | `python pipeline.py --app myapp --skip-scrape` |
 | **Start over** (after changing categories or models) | `python pipeline.py --app myapp --skip-scrape --fresh`. The old results are kept as `reviews_categorized.<timestamp>.bak.csv`. |
 | **Try a small batch** | Add `--limit N` to any step or to the pipeline. |
-| **Only recent reviews** | Set `since_date = "2026-01-01"` under `[scrape]` (in `config.toml`, or in the app profile for one app). |
+| **Only recent reviews** | Set `since_date = "2026-01-01"` under `[scrape]` (in `config.toml`, or in the app profile for one app). Scraping also stops early once it reaches older reviews. |
+| **Only recent app versions** | Set `min_version = "12.0"` under `[scrape]`. Versions compare as numbers (12.10 is newer than 12.9). Reviews Google recorded without a version are left out too, and the cleaning report counts them. |
+| **Narrow or widen the range later** | Change `since_date` / `min_version` and run the pipeline again. The dashboard shows only reviews in the current range; reviews categorized earlier are kept, so widening the range again doesn't redo them. |
 | **Retry failed reviews** | Reviews that failed every attempt are saved as `unclassified`, with the reason in the `error` column. Delete those rows from `reviews_categorized.csv` (with Excel closed) and run again. |
 
 If five reviews in a row fail, the run stops by itself (exit code 4) instead of working through the whole file. That almost always means the model server went away; start it again and resume.
@@ -222,6 +226,7 @@ Every section can be overridden for a single app in its profile.
 | `scrape.page_size` | `200` | Reviews per request. |
 | `scrape.sleep_between_pages_sec` | `1.5` | Pause between requests. Keep it, to stay polite. |
 | `scrape.since_date` | `""` | `"YYYY-MM-DD"` keeps only reviews from that day on (UTC). |
+| `scrape.min_version` | `""` | e.g. `"12.0"` keeps only reviews written on that app version or newer (reviews without a version are dropped). |
 | `scrape.keep_ratings` | `[1, 2, 3, 4]` | Star ratings to keep. Add `5` to include 5-star reviews. |
 | `scrape.min_letters` | `10` | Drop reviews with fewer letters than this. Letters in any script count; emoji, digits and punctuation don't. |
 | `scrape.max_chars` | `2000` | Longer reviews are cut to this length (ending in `…`). |

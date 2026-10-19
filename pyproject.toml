@@ -1,5 +1,5 @@
 [project]
-name = "review-categorizer"
+name = "google-play-review-analyzer"
 version = "2.0.0"
 description = "Scrape public app store reviews, categorize them with a local LLM, and explore them in a dashboard."
 readme = "README.md"

@@ -19,6 +19,7 @@ CLEAN_COLUMNS = ["review_id", "country", "rating", "text", "review_date", "app_v
                  "has_dev_reply", "dev_reply_date", "user_name"]
 RETRY_BACKOFF_SEC = (5, 15, 45)
 WHITESPACE_RE = re.compile(r"\s+")
+VERSION_RE = re.compile(r"\d+(?:\.\d+)*")
 
 
 def parse_since_date(value: str) -> str:
@@ -30,6 +31,30 @@ def parse_since_date(value: str) -> str:
     except (TypeError, ValueError):
         fail(EXIT_CONFIG, 'Invalid config: scrape.since_date must be "YYYY-MM-DD" or ""')
     return day.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def version_key(version: str) -> tuple[int, ...] | None:
+    """'12.10.1' -> (12, 10, 1); the leading dotted number of odd strings ('12.8-beta' -> (12, 8)); None if none."""
+    match = VERSION_RE.match((version or "").strip())
+    return tuple(int(part) for part in match.group().split(".")) if match else None
+
+
+def version_at_least(version: str, minimum: tuple[int, ...]) -> bool:
+    """True when version is minimum or newer, comparing numerically (12.10 > 12.9, 12 == 12.0)."""
+    key = version_key(version)
+    if key is None:
+        return False
+    width = max(len(key), len(minimum))
+    return key + (0,) * (width - len(key)) >= minimum + (0,) * (width - len(minimum))
+
+
+def parse_min_version(value: str) -> str:
+    """Validate scrape.min_version ('' when unset)."""
+    value = str(value or "").strip()
+    if value and not VERSION_RE.fullmatch(value):
+        fail(EXIT_CONFIG, f'Invalid config: scrape.min_version must look like "12.0" (got {value!r})',
+             'use digits separated by dots, or "" for all versions')
+    return value
 
 
 def fetch_page(source, cfg: dict, country: str, token, page: int):
@@ -94,8 +119,9 @@ def clean(records: list[dict], cfg: dict, since_iso: str) -> tuple[list[dict], d
     scrape = cfg["scrape"]
     keep_ratings = set(scrape["keep_ratings"])
     keep_names = cfg["app"]["keep_user_names"]
-    removed = {"duplicate review_id": 0, "rating not in keep_ratings": 0,
-               "older than since_date": 0, "fewer than min_letters letters": 0}
+    min_version = version_key(scrape.get("min_version") or "")
+    removed = {"duplicate review_id": 0, "rating not in keep_ratings": 0, "older than since_date": 0,
+               "below min_version": 0, "fewer than min_letters letters": 0}
 
     seen: set[str] = set()
     rows = []
@@ -115,13 +141,18 @@ def clean(records: list[dict], cfg: dict, since_iso: str) -> tuple[list[dict], d
         removed["older than since_date"] = len(rows) - len(kept)
         rows = kept
 
+    if min_version:  # 4. app version; reviews with no version can't be checked, so they go too
+        kept = [r for r in rows if version_at_least(r["app_version"], min_version)]
+        removed["below min_version"] = len(rows) - len(kept)
+        rows = kept
+
     out = []
     for r in rows:
-        text = WHITESPACE_RE.sub(" ", r["text"].replace("\r", " ").replace("\n", " ")).strip()  # 4.
-        if letter_count(text) < scrape["min_letters"]:  # 5.
+        text = WHITESPACE_RE.sub(" ", r["text"].replace("\r", " ").replace("\n", " ")).strip()  # 5.
+        if letter_count(text) < scrape["min_letters"]:  # 6.
             removed["fewer than min_letters letters"] += 1
             continue
-        if len(text) > scrape["max_chars"]:  # 6.
+        if len(text) > scrape["max_chars"]:  # 7.
             text = text[:scrape["max_chars"]] + "…"
         out.append({
             "review_id": r["review_id"], "country": r["country"], "rating": r["rating"], "text": text,
@@ -129,7 +160,7 @@ def clean(records: list[dict], cfg: dict, since_iso: str) -> tuple[list[dict], d
             "has_dev_reply": "true" if r["reply_text"].strip() else "false", "dev_reply_date": r["reply_date"],
             "user_name": r["user_name"] if keep_names else "",
         })
-    out.sort(key=lambda row: row["review_date"], reverse=True)  # 7.
+    out.sort(key=lambda row: row["review_date"], reverse=True)  # 8.
     return out, removed
 
 
@@ -141,6 +172,7 @@ def main() -> None:
     cfg = load_config(args.config, args.app)
     app, scrape = cfg["app"], cfg["scrape"]
     since_iso = parse_since_date(scrape.get("since_date", ""))
+    min_version = parse_min_version(scrape.get("min_version", ""))
     try:
         source = load_source(scrape.get("source", "google_play"))
     except ImportError as e:
@@ -160,7 +192,8 @@ def main() -> None:
                       f"{ui.number(details.get('reviews') or 0)} written reviews on Google Play")
     ui.field("Fetching", (f"up to {ui.number(args.limit)} newest reviews in total (--limit)" if args.limit else
                           f"up to {ui.number(limit)} newest reviews per country")
-             + (f", from {scrape['since_date']}" if since_iso else ""))
+             + (f", from {scrape['since_date']}" if since_iso else "")
+             + (f", app version {min_version} and newer" if min_version else ""))
 
     items: list[dict] = []
     for country in app["countries"]:
@@ -187,6 +220,7 @@ def main() -> None:
     ui.info(ui.bold("Cleaning"))
     labels = {"duplicate review_id": "duplicates", "rating not in keep_ratings":
               f"ratings not in {scrape['keep_ratings']}", "older than since_date": "older than since_date",
+              "below min_version": f"below version {min_version} or no version" if min_version else "below min_version",
               "fewer than min_letters letters": f"shorter than {scrape['min_letters']} letters"}
     width = max(len(v) for v in labels.values()) + 4
     ui.info(f"  {'fetched'.ljust(width)}{ui.number(len(items)):>8}")
