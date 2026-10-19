@@ -49,20 +49,31 @@ export function ExportMenu({ data, reviews, filtered, categories }: ExportMenuPr
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" disabled={busy} title={error ? `Export failed: ${error}` : undefined}>
-          {busy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
-          {error ? "Export failed" : "Export"}
-          <ChevronDown className="text-muted-foreground" aria-hidden="true" />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          title={error ? `Export failed: ${error}` : "Export to Excel"}
+          aria-label="Export"
+          className="h-8 gap-1.5 px-2.5 text-xs max-sm:size-8 max-sm:px-0"
+        >
+          {busy ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Download className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          )}
+          <span className="max-sm:hidden">{error ? "Export failed" : "Export"}</span>
+          <ChevronDown className="size-3.5 text-muted-foreground max-sm:hidden" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Export to Excel</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground">Export to Excel</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => void run("all")} data-export="all">
+        <DropdownMenuItem onSelect={() => void run("all")} data-export="all" className="text-xs">
           All reviews
-          <span className="ml-auto text-xs text-muted-foreground tabular-nums">{formatInt(reviews.length)}</span>
+          <span className="ml-auto text-muted-foreground">{formatInt(reviews.length)}</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void run("filtered")} data-export="filtered">
+        <DropdownMenuItem onSelect={() => void run("filtered")} data-export="filtered" className="text-xs">
           Filtered reviews ({formatInt(filtered.length)})
         </DropdownMenuItem>
       </DropdownMenuContent>

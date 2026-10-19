@@ -8,7 +8,7 @@ export function Swatch({ color, className }: { color: ThemedColor; className?: s
   return (
     <span
       aria-hidden="true"
-      className={cn("inline-block size-2.5 shrink-0 rounded-[3px] bg-(--sw-l) dark:bg-(--sw-d)", className)}
+      className={cn("inline-block size-2 shrink-0 rounded-full bg-(--sw-l) dark:bg-(--sw-d)", className)}
       style={{ "--sw-l": color.light, "--sw-d": color.dark } as CSSProperties}
     />
   )

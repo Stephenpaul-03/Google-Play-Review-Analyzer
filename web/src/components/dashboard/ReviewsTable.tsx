@@ -1,12 +1,12 @@
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, Star } from "lucide-react"
-import { Fragment, useMemo, useState } from "react"
+import { ChevronLeft, ChevronRight, Columns3 } from "lucide-react"
+import { useMemo, useState } from "react"
 
-import { ReviewDetail } from "@/components/dashboard/ReviewDetail"
+import { Panel, PanelHeader } from "@/components/dashboard/Panel"
+import { ReviewSheet } from "@/components/dashboard/ReviewSheet"
 import { REVIEW_COLUMNS, sortReviews, type ColumnKey, type SortDir } from "@/components/dashboard/reviews-columns"
+import { SortHeader } from "@/components/dashboard/SortHeader"
 import { Swatch } from "@/components/dashboard/Swatch"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { formatDate, formatInt } from "@/data/aggregate"
 import type { CategoryIndex } from "@/data/categories"
 import type { DashboardData, PreparedReview } from "@/data/types"
@@ -30,6 +30,16 @@ interface Props {
 
 const PAGE_SIZES = ["25", "50", "100"]
 
+const CELL_CLASS: Record<ColumnKey, string> = {
+  date: "whitespace-nowrap text-muted-foreground",
+  rating: "whitespace-nowrap",
+  category: "",
+  summary: "",
+  user: "text-muted-foreground",
+  version: "whitespace-nowrap font-mono text-muted-foreground",
+  thumbs: "text-right",
+}
+
 export function ReviewsTable({ rows, data, categories }: Props) {
   const keepUsers = data.meta.keep_user_names
   const columns = useMemo(() => REVIEW_COLUMNS.filter((c) => c.key !== "user" || keepUsers), [keepUsers])
@@ -37,7 +47,7 @@ export function ReviewsTable({ rows, data, categories }: Props) {
   const [hiddenCols, setHiddenCols] = useState<Set<ColumnKey>>(() => new Set())
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(0)
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
 
   // Back to page 1 whenever the filtered set changes.
   const [seenRows, setSeenRows] = useState(rows)
@@ -51,13 +61,13 @@ export function ReviewsTable({ rows, data, categories }: Props) {
   const current = Math.min(page, pages - 1)
   const visible = sorted.slice(current * pageSize, current * pageSize + pageSize)
   const shownCols = columns.filter((c) => !hiddenCols.has(c.key))
+  const openIndex = openId ? sorted.findIndex((r) => r.review_id === openId) : -1
 
   const onSort = (key: ColumnKey) => {
     const col = columns.find((c) => c.key === key)
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: col?.firstDir ?? "asc" }))
     setPage(0)
   }
-
   const toggleCol = (key: ColumnKey, on: boolean) =>
     setHiddenCols((prev) => {
       const next = new Set(prev)
@@ -65,202 +75,204 @@ export function ReviewsTable({ rows, data, categories }: Props) {
       else next.add(key)
       return next
     })
+  const openAt = (index: number) => {
+    const r = sorted[index]
+    if (!r) return
+    setOpenId(r.review_id)
+    setPage(Math.floor(index / pageSize))
+  }
 
   return (
-    <Card className="min-w-0 gap-4" data-section="reviews">
-      <CardHeader className="flex flex-wrap items-start justify-between gap-2 px-4 sm:px-6">
-        <div className="space-y-1">
-          <CardTitle className="text-sm font-semibold">Reviews</CardTitle>
-          <CardDescription className="text-xs">Click a row for the full review.</CardDescription>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
-              <Columns3 aria-hidden="true" />
-              Columns
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Visible columns</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {columns.map((c) => (
-              <DropdownMenuCheckboxItem
-                key={c.key}
-                checked={!hiddenCols.has(c.key)}
-                onCheckedChange={(v) => toggleCol(c.key, v === true)}
-                onSelect={(e) => e.preventDefault()}
-                disabled={!hiddenCols.has(c.key) && shownCols.length === 1}
-              >
-                {c.label}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </CardHeader>
-      <CardContent className="px-0 sm:px-2">
-        <Table className="min-w-[720px]">
-          <TableHeader>
-            <TableRow>
-              {shownCols.map((c) => (
-                <TableHead key={c.key} className={cn("first:pl-4 last:pr-4", c.align === "right" && "text-right")}>
-                  <button
-                    type="button"
-                    onClick={() => onSort(c.key)}
-                    data-sort={c.key}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-sm hover:text-foreground",
-                      sort.key === c.key ? "text-foreground" : "text-muted-foreground",
-                    )}
-                    aria-label={`Sort by ${c.label}`}
-                  >
-                    {c.label}
-                    {sort.key === c.key &&
-                      (sort.dir === "asc" ? (
-                        <ArrowUp className="size-3.5" aria-hidden="true" />
-                      ) : (
-                        <ArrowDown className="size-3.5" aria-hidden="true" />
-                      ))}
-                  </button>
-                </TableHead>
+    <Panel className="overflow-hidden" data-section="reviews">
+      <PanelHeader
+        title="Reviews"
+        description="Click a review to read it in full. Use j and k to move through the list."
+        actions={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" data-columns>
+                <Columns3 className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground">Visible columns</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {columns.map((c) => (
+                <DropdownMenuCheckboxItem
+                  key={c.key}
+                  className="text-xs"
+                  checked={!hiddenCols.has(c.key)}
+                  onCheckedChange={(v) => toggleCol(c.key, v === true)}
+                  onSelect={(e) => e.preventDefault()}
+                  disabled={!hiddenCols.has(c.key) && shownCols.length === 1}
+                >
+                  {c.label}
+                </DropdownMenuCheckboxItem>
               ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visible.map((r) => {
-              const open = expanded === r.review_id
-              return (
-                <Fragment key={r.review_id}>
-                  <TableRow
-                    onClick={() => setExpanded(open ? null : r.review_id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault()
-                        setExpanded(open ? null : r.review_id)
-                      }
-                    }}
-                    tabIndex={0}
-                    aria-expanded={open}
-                    data-review-row={r.review_id}
-                    className={cn("cursor-pointer align-top", open && "border-b-0 bg-muted/50")}
-                  >
-                    {shownCols.map((c) => (
-                      <TableCell key={c.key} className={cn("first:pl-4 last:pr-4", c.align === "right" && "text-right")}>
-                        <ReviewCell column={c.key} review={r} categories={categories} />
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                  {open && (
-                    <TableRow className="bg-muted/50 hover:bg-muted/50">
-                      <TableCell colSpan={shownCols.length} className="px-4 pt-0 pb-4 whitespace-normal">
-                        <ReviewDetail review={r} data={data} categories={categories} />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              )
-            })}
-          </TableBody>
-        </Table>
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 text-xs text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <span>Rows per page</span>
-            <Select
-              value={String(pageSize)}
-              onValueChange={(v) => {
-                setPageSize(Number(v))
-                setPage(0)
-              }}
-            >
-              <SelectTrigger size="sm" className="h-8 w-[72px] text-xs" aria-label="Rows per page">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PAGE_SIZES.map((s) => (
-                  <SelectItem key={s} value={s} className="text-xs">
-                    {s}
-                  </SelectItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
+      <div className="mt-4 overflow-x-auto border-t">
+        <table className="w-full min-w-[860px] table-fixed text-xs">
+          <colgroup>
+            {shownCols.map((c) => (
+              <col key={c.key} className={COL_WIDTH[c.key]} />
+            ))}
+          </colgroup>
+          <thead>
+            <tr className="h-9 border-b">
+              {shownCols.map((c) => (
+                <th key={c.key} className={cn("px-3 font-normal first:pl-5 last:pr-5", c.align === "right" ? "text-right" : "text-left")}>
+                  <SortHeader
+                    label={c.label}
+                    sortKey={c.key}
+                    active={sort.key === c.key}
+                    dir={sort.dir}
+                    onClick={() => onSort(c.key)}
+                    align={c.align === "right" ? "right" : "left"}
+                  />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((r) => (
+              <tr
+                key={r.review_id}
+                onClick={() => setOpenId(r.review_id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    setOpenId(r.review_id)
+                  }
+                }}
+                tabIndex={0}
+                data-review-row={r.review_id}
+                className={cn(
+                  "h-10 cursor-pointer border-b outline-none transition-colors last:border-b-0 hover:bg-accent/60 focus-visible:bg-accent",
+                  openId === r.review_id && "bg-accent",
+                )}
+              >
+                {shownCols.map((c) => (
+                  <td key={c.key} className={cn("px-3 first:pl-5 last:pr-5", CELL_CLASS[c.key])}>
+                    <ReviewCell column={c.key} review={r} categories={categories} />
+                  </td>
                 ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="tabular-nums" data-page-info>
-              {sorted.length === 0
-                ? "0 reviews"
-                : `${formatInt(current * pageSize + 1)}-${formatInt(Math.min(sorted.length, (current + 1) * pageSize))} of ${formatInt(sorted.length)}`}
-            </span>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPage(current - 1)}
-              disabled={current === 0}
-              aria-label="Previous page"
-            >
-              <ChevronLeft aria-hidden="true" />
-            </Button>
-            <span className="tabular-nums">
-              Page {current + 1} of {pages}
-            </span>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => setPage(current + 1)}
-              disabled={current >= pages - 1}
-              aria-label="Next page"
-            >
-              <ChevronRight aria-hidden="true" />
-            </Button>
-          </div>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2 border-t px-5 py-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span>Rows per page</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => {
+              setPageSize(Number(v))
+              setPage(0)
+            }}
+          >
+            <SelectTrigger size="sm" className="h-7 w-[64px] px-2 text-xs shadow-none" aria-label="Rows per page">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {PAGE_SIZES.map((s) => (
+                <SelectItem key={s} value={s} className="text-xs">
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      </CardContent>
-    </Card>
+        <span data-page-info>
+          {sorted.length === 0
+            ? "0 reviews"
+            : `${formatInt(current * pageSize + 1)}-${formatInt(Math.min(sorted.length, (current + 1) * pageSize))} of ${formatInt(sorted.length)}`}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-7"
+            onClick={() => setPage(current - 1)}
+            disabled={current === 0}
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="size-3.5" aria-hidden="true" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-7"
+            onClick={() => setPage(current + 1)}
+            disabled={current >= pages - 1}
+            aria-label="Next page"
+          >
+            <ChevronRight className="size-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+      <ReviewSheet
+        review={openIndex >= 0 ? sorted[openIndex] : null}
+        index={openIndex}
+        total={sorted.length}
+        data={data}
+        categories={categories}
+        onClose={() => setOpenId(null)}
+        onMove={(delta) => openAt(openIndex + delta)}
+      />
+    </Panel>
   )
+}
+
+const COL_WIDTH: Record<ColumnKey, string> = {
+  date: "w-28",
+  rating: "w-16",
+  category: "w-52",
+  summary: "",
+  user: "w-40",
+  version: "w-24",
+  thumbs: "w-24",
 }
 
 function ReviewCell({ column, review: r, categories }: { column: ColumnKey; review: PreparedReview; categories: CategoryIndex }) {
   switch (column) {
     case "date":
-      return <span className="whitespace-nowrap tabular-nums">{formatDate(r.review_date) || "-"}</span>
+      return <>{formatDate(r.review_date) || "-"}</>
     case "rating":
       return (
-        <span className="inline-flex items-center gap-1 tabular-nums">
-          {r.rating}
-          <Star className="size-3 fill-current text-muted-foreground" aria-label="stars" />
+        <span>
+          {r.rating} <span className="text-muted-foreground">&#9733;</span>
         </span>
       )
     case "category": {
       const info = categories.get(r.primary_category)
+      const extra = r.secondary_categories
       return (
-        <div className="flex max-w-[220px] flex-col gap-1">
-          <span className="inline-flex items-center gap-1.5 font-medium whitespace-nowrap">
-            <Swatch color={info.color} />
-            {info.label}
-          </span>
-          {r.secondary_categories.length > 0 && (
-            <span className="flex flex-wrap gap-1">
-              {r.secondary_categories.map((s) => (
-                <Badge key={s} variant="outline" className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground">
-                  {categories.get(s).label}
-                </Badge>
-              ))}
-            </span>
+        <span className="flex min-w-0 items-center gap-2">
+          <Swatch color={info.color} />
+          <span className="truncate">{info.label}</span>
+          {extra.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="shrink-0 rounded border px-1 text-[10px] leading-4 text-muted-foreground">+{extra.length}</span>
+              </TooltipTrigger>
+              <TooltipContent>Also: {extra.map((s) => categories.get(s).label).join(", ")}</TooltipContent>
+            </Tooltip>
           )}
-        </div>
+        </span>
       )
     }
     case "summary":
-      return (
-        <span className={cn("line-clamp-2 max-w-[420px] min-w-[220px] whitespace-normal", !r.summary && "text-muted-foreground")}>
-          {r.summary || r.text}
-        </span>
-      )
+      return <span className={cn("block truncate", r.summary ? "text-foreground" : "text-muted-foreground")}>{r.summary || r.text}</span>
     case "user":
-      return <span className="block max-w-[160px] truncate">{r.user_name || "-"}</span>
+      return <span className="block truncate">{r.user_name || "-"}</span>
     case "version":
-      return <span className="whitespace-nowrap tabular-nums">{r.app_version || "-"}</span>
+      return <>{r.app_version || "-"}</>
     case "thumbs":
-      return <span className="tabular-nums">{formatInt(r.thumbs_up)}</span>
+      return <>{formatInt(r.thumbs_up)}</>
   }
 }

@@ -12,8 +12,15 @@ export function ModeToggle() {
   const label = `${resolvedTheme === "dark" ? "Dark" : "Light"} mode. Switch to ${next} mode`
 
   return (
-    <Button variant="outline" size="icon" aria-label={label} title={label} onClick={() => setTheme(next)}>
-      <Icon className="size-4" aria-hidden="true" />
+    <Button
+      variant="outline"
+      size="icon"
+      aria-label={label}
+      title={label}
+      onClick={() => setTheme(next)}
+      className="size-8 shadow-none text-muted-foreground hover:text-foreground"
+    >
+      <Icon className="size-3.5" aria-hidden="true" />
     </Button>
   )
 }

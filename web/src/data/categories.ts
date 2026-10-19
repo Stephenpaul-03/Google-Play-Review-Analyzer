@@ -81,3 +81,15 @@ export function buildCategoryIndex(categories: Category[], reviews: PreparedRevi
   }
   return { list, byId, get }
 }
+
+/** Sentiment colours (validated palette steps): negative red, mixed amber, neutral grey, positive green. */
+export const SENTIMENT_COLORS: Record<string, ThemedColor> = {
+  negative: CATEGORY_PALETTE[7],
+  mixed: CATEGORY_PALETTE[3],
+  neutral: NEUTRAL_COLOR,
+  positive: CATEGORY_PALETTE[2],
+}
+
+export function sentimentColor(s: string): ThemedColor {
+  return SENTIMENT_COLORS[s] ?? { light: "#c4c4c8", dark: "#55555c" }
+}

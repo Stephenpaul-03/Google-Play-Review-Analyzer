@@ -3,6 +3,10 @@
 React 19 + Vite 7 + TypeScript + Tailwind 4 + shadcn/ui (Recharts charts, SheetJS export).
 It only reads the files described in `../docs/data-contract.md`.
 
+Typography is Inter Variable (latin subset, from `@fontsource-variable/inter`), inlined into the
+build as a data URI, with the system font stack as fallback. Theme tokens (light and dark) live in
+`src/index.css`.
+
 ## Commands
 
 ```sh
@@ -45,6 +49,8 @@ because browsers block `fetch` on `file://`.
 - `src/components/dashboard/*`: header, filters bar, KPI cards, charts, tables, export menu.
 
 All filters (and the view) live in the URL hash, so a filtered view can be bookmarked or shared.
+Keyboard: `/` focuses search, Esc clears it; in the review panel `j` / `k` move to the next or
+previous review.
 
 ## Excel export
 

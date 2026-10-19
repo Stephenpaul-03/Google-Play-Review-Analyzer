@@ -103,7 +103,7 @@ export function bucketStart(ts: number, g: Granularity): number {
   return day - dow * DAY
 }
 
-function nextBucket(ts: number, g: Granularity): number {
+export function nextBucket(ts: number, g: Granularity): number {
   if (g === "day") return ts + DAY
   if (g === "week") return ts + 7 * DAY
   const d = new Date(ts)
@@ -140,6 +140,55 @@ export function complaintsOverTime(
     const m = buckets.get(b)
     for (const s of series) point[s.key] = m?.get(s.key) ?? 0
     out.push(point)
+  }
+  return out
+}
+
+/** Default granularity for a visible span: <= 62 days by day, <= 6 months by week, else by month. */
+export function autoGranularity(spanMs: number): Granularity {
+  const days = spanMs / DAY
+  if (days <= 62) return "day"
+  if (days <= 183) return "week"
+  return "month"
+}
+
+/** Time extent (ms) of the rows, or null when no row has a date. */
+export function dateExtent(rows: PreparedReview[]): { min: number; max: number } | null {
+  let min = Infinity
+  let max = -Infinity
+  for (const r of rows) {
+    if (Number.isNaN(r.ts)) continue
+    if (r.ts < min) min = r.ts
+    if (r.ts > max) max = r.ts
+  }
+  return Number.isFinite(min) ? { min, max } : null
+}
+
+export interface WeekPoint {
+  ts: number
+  reviews: number
+  complaints: number
+}
+
+/** Zero-filled weekly review and complaint counts (Monday weeks, UTC), for sparklines. */
+export function weeklySeries(rows: PreparedReview[]): WeekPoint[] {
+  const m = new Map<number, WeekPoint>()
+  let min = Infinity
+  let max = -Infinity
+  for (const r of rows) {
+    if (Number.isNaN(r.ts)) continue
+    const b = bucketStart(r.ts, "week")
+    if (b < min) min = b
+    if (b > max) max = b
+    let p = m.get(b)
+    if (!p) m.set(b, (p = { ts: b, reviews: 0, complaints: 0 }))
+    p.reviews++
+    if (r.is_complaint === true) p.complaints++
+  }
+  if (!Number.isFinite(min)) return []
+  const out: WeekPoint[] = []
+  for (let b = min, guard = 0; b <= max && guard < 5000; b = nextBucket(b, "week"), guard++) {
+    out.push(m.get(b) ?? { ts: b, reviews: 0, complaints: 0 })
   }
   return out
 }

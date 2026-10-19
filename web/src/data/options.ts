@@ -13,6 +13,7 @@ export interface Option {
 
 export interface FilterOptions {
   categories: Option[]
+  ratings: Option[]
   sentiments: Option[]
   versions: Option[]
   countries: Option[]
@@ -33,6 +34,7 @@ function counter(rows: PreparedReview[], pick: (r: PreparedReview) => string): M
 export function buildFilterOptions(rows: PreparedReview[], cats: CategoryIndex): FilterOptions {
   const catCounts = counter(rows, (r) => r.primary_category)
   const sentiments = counter(rows, (r) => r.sentiment)
+  const ratings = counter(rows, (r) => String(r.rating))
   const versions = counter(rows, (r) => r.app_version)
   const countries = counter(rows, (r) => r.country)
   const order = ["negative", "mixed", "neutral", "positive"]
@@ -40,6 +42,7 @@ export function buildFilterOptions(rows: PreparedReview[], cats: CategoryIndex):
     categories: cats.list
       .filter((c) => c.id !== UNCLASSIFIED && (c.known || catCounts.has(c.id)))
       .map((c) => ({ value: c.id, label: c.label, count: catCounts.get(c.id) ?? 0, color: c.color })),
+    ratings: ["5", "4", "3", "2", "1"].map((v) => ({ value: v, label: `${v} \u2605`, count: ratings.get(v) ?? 0 })),
     sentiments: [...sentiments.keys()]
       .sort((a, b) => {
         const ia = order.indexOf(a)

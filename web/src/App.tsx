@@ -90,7 +90,7 @@ export default function App() {
   if (state.status === "loading") return <LoadingState />
   if (state.status === "error") return <MessageState title="Could not load the dashboard" message={state.message} />
   if (state.status === "empty") {
-    return <MessageState title="No apps yet" message="No apps yet. Run python pipeline.py --app <name>." />
+    return <MessageState kind="empty" title="No apps yet" message="No apps yet. Run python pipeline.py --app <name>." />
   }
   return (
     <Dashboard

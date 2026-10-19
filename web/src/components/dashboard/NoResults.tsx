@@ -1,21 +1,19 @@
 import { SearchX } from "lucide-react"
 
+import { Panel } from "@/components/dashboard/Panel"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 
 export function NoResults({ onClear }: { onClear: () => void }) {
   return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-        <SearchX className="size-8 text-muted-foreground" aria-hidden="true" />
-        <div>
-          <div className="font-medium">No reviews match these filters</div>
-          <p className="mt-1 text-sm text-muted-foreground">Remove a filter or widen the date range.</p>
-        </div>
-        <Button variant="outline" onClick={onClear}>
-          Clear all filters
-        </Button>
-      </CardContent>
-    </Card>
+    <Panel className="flex flex-col items-center px-6 py-20 text-center" data-empty>
+      <div className="mb-4 flex size-10 items-center justify-center rounded-lg border bg-muted/50">
+        <SearchX className="size-4 text-muted-foreground" aria-hidden="true" />
+      </div>
+      <h3 className="text-sm font-semibold">No reviews match these filters</h3>
+      <p className="mt-1 max-w-xs text-sm text-muted-foreground">Remove a filter, clear the search or widen the date range.</p>
+      <Button variant="outline" size="sm" className="mt-5 h-8 text-xs" onClick={onClear}>
+        Clear filters
+      </Button>
+    </Panel>
   )
 }

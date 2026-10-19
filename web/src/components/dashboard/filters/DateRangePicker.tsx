@@ -44,21 +44,27 @@ export function DateRangePicker({ value, onChange, className }: DateRangePickerP
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <Button variant="outline" className={cn("justify-start", className)} aria-label="Date range">
-          <CalendarDays className="text-muted-foreground" aria-hidden="true" />
-          <span className="truncate">{rangeLabel(value)}</span>
-          <ChevronDown className="ml-auto text-muted-foreground" aria-hidden="true" />
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("h-8 gap-1.5 px-2.5 text-xs max-sm:size-8 max-sm:px-0", value.preset !== "all" && "bg-accent", className)}
+          aria-label={`Date range: ${rangeLabel(value)}`}
+          title={rangeLabel(value)}
+        >
+          <CalendarDays className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          <span className="truncate max-sm:hidden">{rangeLabel(value)}</span>
+          <ChevronDown className="size-3.5 text-muted-foreground max-sm:hidden" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto max-w-[calc(100vw-1rem)] p-0" align="start">
+      <PopoverContent className="w-auto max-w-[calc(100vw-1rem)] p-0" align="end">
         <div className="flex flex-col sm:flex-row">
-          <div className="grid grid-cols-2 gap-1 border-b p-2 sm:flex sm:flex-col sm:border-r sm:border-b-0">
+          <div className="grid grid-cols-2 gap-0.5 border-b p-1.5 sm:flex sm:w-40 sm:flex-col sm:border-r sm:border-b-0">
             {RANGE_PRESETS.map((p) => (
               <Button
                 key={p.value}
-                variant={value.preset === p.value ? "secondary" : "ghost"}
+                variant="ghost"
                 size="sm"
-                className="justify-start"
+                className={cn("h-8 justify-start text-xs font-normal", value.preset === p.value && "bg-accent font-medium")}
                 onClick={() => {
                   onChange({ preset: p.value })
                   setOpen(false)
@@ -79,9 +85,11 @@ export function DateRangePicker({ value, onChange, className }: DateRangePickerP
             />
             <div className="flex items-center justify-between gap-2 border-t px-2 pt-2 pb-1">
               <span className="text-xs text-muted-foreground">
-                {draft?.from ? `${toDay(draft.from)} to ${toDay(draft.to ?? draft.from)}` : "Pick a start and end day"}
+                {draft?.from
+                  ? rangeLabel({ preset: "custom", from: toDay(draft.from), to: toDay(draft.to ?? draft.from) })
+                  : "Pick a start and end day"}
               </span>
-              <Button size="sm" onClick={applyDraft} disabled={!draft?.from}>
+              <Button size="sm" className="h-7 text-xs" onClick={applyDraft} disabled={!draft?.from}>
                 Apply
               </Button>
             </div>
