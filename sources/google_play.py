@@ -49,7 +49,7 @@ def lookup(app_id: str, lang: str, country: str) -> dict:
     except Exception as e:
         raise FetchError(str(e))
     return {"title": details.get("title") or app_id, "installs": details.get("installs") or "",
-            "developer": details.get("developer") or ""}
+            "developer": details.get("developer") or "", "reviews": details.get("reviews") or 0}
 
 
 def fetch_page(app_id: str, lang: str, country: str, page_size: int, token):

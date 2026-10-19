@@ -1,19 +1,39 @@
 """Run the whole pipeline for one app: scrape -> categorize -> build dashboard.
 
 Run: python pipeline.py --app <name> [--limit 50] [--skip-scrape] [--fresh] [--open]
-Each step is the normal script, so its messages, logs and exit codes are unchanged; the
-pipeline stops at the first step that fails and exits with that step's code.
+Each step is the normal script, so its output, logs and exit codes are unchanged; the
+pipeline numbers the steps, stops at the first one that fails, and ends with a summary.
 """
 
 import argparse
+import os
 import subprocess
 import sys
+import time
 
-from common import ROOT
+import ui
+from common import EXIT_STOPPED, ROOT
+
+STEP_TITLES = {"scrape_reviews.py": "Scrape", "categorize_reviews.py": "Categorize", "build_dashboard.py": "Dashboard"}
+EXIT_MEANINGS = {1: "unexpected error", 2: "invalid config", 3: "missing input", 4: "engine unavailable",
+                 130: "stopped"}
+
+
+def run_step(command: list[str], env: dict) -> int:
+    """Run one step; on Ctrl+C let the step save and exit on its own instead of killing it."""
+    process = subprocess.Popen(command, env=env)
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        try:
+            return process.wait(timeout=30)  # the step received the same Ctrl+C and is closing its files
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            return EXIT_STOPPED
 
 
 def main() -> None:
-    """Run the three steps in order with the shared flags."""
+    """Run the three steps in order with the shared flags, then print a summary."""
     parser = argparse.ArgumentParser(description="Scrape, categorize and build the dashboard for one app.")
     parser.add_argument("--config", default=str(ROOT / "config.toml"))
     parser.add_argument("--app", help="app profile name in apps/ (default: default_app in config.toml)")
@@ -31,13 +51,29 @@ def main() -> None:
     steps.append(["categorize_reviews.py", *shared, *limit, *(["--fresh"] if args.fresh else [])])
     steps.append(["build_dashboard.py", *shared, *(["--open"] if args.open else [])])
 
-    for script, *rest in steps:
-        print(f"\n=== {script} ===", flush=True)
-        code = subprocess.call([sys.executable, str(ROOT / script), *rest])
+    print(ui.bold(f"Review pipeline · {args.app or 'default app'}") + ui.dim(f"  ({len(steps)} steps)"))
+    results, started = [], time.monotonic()
+    for number, (script, *rest) in enumerate(steps, 1):
+        env = {**os.environ, "PIPELINE_STAGE": f"{number}/{len(steps)}"}
+        step_started = time.monotonic()
+        code = run_step([sys.executable, str(ROOT / script), *rest], env)
+        results.append((STEP_TITLES[script], code, time.monotonic() - step_started))
         if code != 0:
-            print(f"\n{script} exited with code {code}; stopping.", file=sys.stderr)
-            sys.exit(code)
-    print("\nDone. Local dashboard: cd web && npm run preview")
+            break
+
+    print()
+    print(ui.bold("Summary"))
+    for title, code, seconds in results:
+        text = "✓ done" if code == 0 else f"✗ {EXIT_MEANINGS.get(code, 'failed')} (exit {code})"
+        status = (ui.green if code == 0 else ui.red)(text.ljust(28))
+        print(f"  {title:<11}{status}{ui.dim(ui.duration(seconds))}")
+    for title in [STEP_TITLES[s[0]] for s in steps[len(results):]]:
+        print(f"  {title:<11}{ui.dim('– not run')}")
+    final = results[-1][1]
+    print(f"  {ui.dim('Total'.ljust(11))}{ui.dim(ui.duration(time.monotonic() - started))}")
+    if final == EXIT_STOPPED:
+        print(ui.yellow("\n  Stopped. Run the same command to continue where it left off."))
+    sys.exit(final)
 
 
 if __name__ == "__main__":

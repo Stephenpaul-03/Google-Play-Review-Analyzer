@@ -10,8 +10,9 @@ import json
 import webbrowser
 from collections import Counter
 
+import ui
 from common import (DATA_DIR, EXIT_MISSING_INPUT, ROOT, data_dir, fail, load_config, log, parse_args, read_csv,
-                    run, setup_logging, utc_now_iso)
+                    run, setup_logging, short, utc_now_iso)
 
 SCHEMA_VERSION = 1
 WEB_BUILD = ROOT / "web" / "dist" / "index.html"
@@ -69,7 +70,8 @@ def build_data(cfg: dict) -> dict:
                                                    out_dir / "category_summary.csv", out_dir / "app_meta.json",
                                                    out_dir / "reviews_clean.csv")
     if not all(p.exists() for p in (categorized, summary, meta_path)):
-        fail(EXIT_MISSING_INPUT, "Run categorize_reviews.py first.")
+        fail(EXIT_MISSING_INPUT, "No categorized reviews yet",
+             f"run: python categorize_reviews.py --app {cfg['profile_name']}")
     app = cfg["app"]
     clean = {r["review_id"]: r for r in read_csv(clean_path)} if clean_path.exists() else {}
     rows = read_csv(categorized)
@@ -114,6 +116,7 @@ def main() -> None:
     args = parse_args("Build the review dashboard data.", with_limit=False, extra=lambda p: p.add_argument(
         "--open", action="store_true", help="open the single-file dashboard in the default browser"))
     setup_logging("build_dashboard")
+    ui.stage("Building dashboard")
     cfg = load_config(args.config, args.app)
     data = build_data(cfg)
     out_dir = data_dir(cfg)
@@ -121,18 +124,22 @@ def main() -> None:
     data_path = out_dir / "dashboard_data.json"
     data_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     count = refresh_index()
-    print(f"Wrote {data_path} ({len(data['reviews'])} reviews); data/apps.json lists {count} app(s)")
+    ui.ok(f"Data: {short(data_path)} ({ui.number(len(data['reviews']))} reviews)")
+    ui.ok(f"Index: data/apps.json ({count} app{'s' if count != 1 else ''})")
 
     if not WEB_BUILD.exists():
-        print("Single-file dashboard skipped: build the web app once with  cd web && npm install && npm run build")
+        ui.warn("Single-file dashboard skipped: the web app isn't built yet")
+        ui.info(ui.dim("Build it once with:  cd web && npm install && npm run build"))
         return
     template = WEB_BUILD.read_text(encoding="utf-8")
     if PLACEHOLDER not in template:
-        fail(EXIT_MISSING_INPUT, "web/dist/index.html has no data placeholder. Rebuild it: cd web && npm run build")
+        fail(EXIT_MISSING_INPUT, "web/dist/index.html has no data placeholder", "rebuild it: cd web && npm run build")
     html_path = out_dir / "dashboard.html"
     html_path.write_text(template.replace(PLACEHOLDER, PLACEHOLDER.replace(">null<", f">{embed_json(data)}<"), 1),
                          encoding="utf-8")
-    print(f"Wrote {html_path} ({html_path.stat().st_size / 1_048_576:.1f} MB)")
+    ui.ok(f"Dashboard: {short(html_path)} ({html_path.stat().st_size / 1_048_576:.1f} MB)")
+    ui.field("Open", f"{html_path.as_uri()}", width=6)
+    ui.field("or", f"cd web && npm run preview   {ui.dim('(all apps, with an app switcher)')}", width=6)
     if args.open:
         webbrowser.open(html_path.as_uri())
 

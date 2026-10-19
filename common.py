@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+import ui
+
 ROOT = Path(__file__).resolve().parent
 APPS_DIR = ROOT / "apps"
 DATA_DIR = ROOT / "data"
@@ -32,36 +34,36 @@ log = logging.getLogger("pipeline")
 _log_path: Path | None = None
 
 
-class _ConsoleFilter(logging.Filter):
-    """Keep records marked file_only=True out of the console."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return not getattr(record, "file_only", False)
-
-
 def setup_logging(script_name: str) -> Path:
-    """Log INFO to the console and DEBUG to logs/<script>_<timestamp>.log; return the log path."""
+    """Write DEBUG detail to logs/<script>_<timestamp>.log; the terminal shows the ui module's output."""
     global _log_path
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     _log_path = LOGS_DIR / f"{script_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-    console = logging.StreamHandler(sys.stdout)
-    console.setLevel(logging.INFO)
-    console.setFormatter(fmt)
-    console.addFilter(_ConsoleFilter())
     to_file = logging.FileHandler(_log_path, encoding="utf-8")
     to_file.setLevel(logging.DEBUG)
-    to_file.setFormatter(fmt)
+    to_file.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     log.setLevel(logging.DEBUG)
-    log.handlers[:] = [console, to_file]
+    log.handlers[:] = [to_file]
     log.propagate = False
     return _log_path
 
 
-def fail(code: int, message: str) -> None:
-    """Print a plain-English message, record it in the log file, and exit with code."""
-    print(message, file=sys.stderr)
-    log.error(message, extra={"file_only": True})
+def log_path() -> Path | None:
+    """This run's log file (None before setup_logging)."""
+    return _log_path
+
+
+def short(path: Path) -> str:
+    """A path relative to the project folder, for display."""
+    try:
+        return str(Path(path).resolve().relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def fail(code: int, message: str, fix: str | None = None) -> None:
+    """Show a plain-English error (and how to fix it), record it in the log, and exit with code."""
+    ui.error(message, fix, short(_log_path) if _log_path and code in (EXIT_UNEXPECTED, EXIT_ENGINE) else None)
     sys.exit(code)
 
 
@@ -107,15 +109,16 @@ def available_apps() -> list[str]:
 def app_profile_path(app: str | None, shared: dict) -> Path:
     """Resolve --app (or default_app) to a profile file."""
     name = app or shared.get("default_app")
+    apps = ", ".join(available_apps()) or "none yet"
+    create = "create one with: python new_app.py <play store url>"
     if not name:
-        fail(EXIT_CONFIG, f"No app chosen. Use --app <name> (available: {', '.join(available_apps()) or 'none'}).")
+        fail(EXIT_CONFIG, "No app chosen", f"pass --app <name> (available: {apps}), or {create}")
     path = Path(name)
     if path.suffix == ".toml" or path.is_file():
         return path
     path = APPS_DIR / f"{name}.toml"
     if not path.is_file():
-        hint = ", ".join(available_apps()) or "none yet: run python new_app.py <play store url>"
-        fail(EXIT_CONFIG, f"App profile not found: apps/{name}.toml (available: {hint})")
+        fail(EXIT_CONFIG, f"App profile not found: apps/{name}.toml", f"available: {apps}; or {create}")
     return path
 
 
@@ -133,7 +136,7 @@ def _validate_categories(raw) -> list[dict]:
         seen.add(cid)
         description = str(c.get("description") or "").strip()
         if not description:
-            log.warning("Category %s has no description; the model will see %r", cid, NO_DEFINITION)
+            ui.warn(f"Category {cid} has no description; the model will only see {NO_DEFINITION!r}")
         categories.append({"id": cid, "label": str(c.get("label") or cid.replace("_", " ").capitalize()),
                            "description": description or NO_DEFINITION})
     if "other" not in seen:
@@ -208,11 +211,12 @@ def run(main: Callable[[], None]) -> None:
     except SystemExit:
         raise
     except KeyboardInterrupt:
-        print("\nStopped.")
+        ui.warn("Stopped. Everything finished so far is saved; run the same command to continue.")
         sys.exit(EXIT_STOPPED)
-    except Exception:
+    except Exception as e:
         if _log_path is None:
             raise
-        log.error("Unexpected error\n%s", traceback.format_exc(), extra={"file_only": True})
-        print(f"Unexpected error, details in {_log_path}", file=sys.stderr)
+        log.error("Unexpected error\n%s", traceback.format_exc())
+        ui.error(f"Unexpected error: {type(e).__name__}: {e}", "see the log for the full details",
+                 short(_log_path))
         sys.exit(EXIT_UNEXPECTED)

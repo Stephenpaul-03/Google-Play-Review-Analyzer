@@ -14,6 +14,7 @@ import categorize_reviews
 import common
 import new_app
 import scrape_reviews
+import ui
 from engines import llm_prompt
 
 common.log.addHandler(logging.NullHandler())
@@ -153,6 +154,21 @@ class DashboardAndToolsTests(unittest.TestCase):
         self.assertIsNone(new_app.package_from("Example App"))
         self.assertEqual(new_app.slug("Example App - Food Delivery"), "example_app")
         self.assertEqual(new_app.slug("Uber Eats: Food Delivery"), "uber_eats")
+
+
+class TerminalOutputTests(unittest.TestCase):
+    def test_durations_and_numbers(self):
+        self.assertEqual([ui.duration(s) for s in (5, 65, 3700)], ["5s", "1m 05s", "1h 01m"])
+        self.assertEqual(ui.number(12345), "12,345")
+
+    def test_progress_line_shows_percent_counts_and_time_left(self):
+        bar = ui.Progress("Progress", 200)
+        bar.started -= 100  # pretend 100 seconds have passed
+        bar.done, bar.notes = 50, "2 retried"
+        line = ui._strip(bar.line())
+        bar.finish()
+        for part in ("25%", "50 / 200 reviews", "2.0s/review", "~5m 00s left", "2 retried"):
+            self.assertIn(part, line)
 
 
 if __name__ == "__main__":

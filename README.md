@@ -108,13 +108,52 @@ python pipeline.py --app myapp               # full run
 
 Set `default_app = "myapp"` in `config.toml` and you can leave out `--app`.
 
+### What you'll see
+
+Each step prints a numbered header, a live progress bar and a short result:
+
+```
+Review pipeline · myapp  (3 steps)
+
+[1/3] Scraping reviews
+  App        My App com.example.app
+  Store      GB · en · 8,240 written reviews on Google Play
+  Fetching   up to 5,000 newest reviews per country
+  ✓ GB: 5,000 reviews in 58s (reached the limit)
+  Cleaning
+    fetched                           5,000
+  − duplicates                            0
+  − ratings not in [1, 2, 3, 4]       3,105
+  − older than since_date                 0
+  − shorter than 10 letters             142
+    clean reviews                     1,753
+  ✓ Saved data/com.example.app/reviews_clean.csv (+ raw and meta files)
+
+[2/3] Categorizing reviews
+  Engine     ollama · qwen2.5:7b-instruct
+  Categories 11 from apps/myapp.toml
+  Reviews    1,753 clean · 400 already done · 1,353 to do now
+  Progress  ████████░░░░░░░░░░░░░░░░   34%  460 / 1,353 reviews  1.9s/review  ~28m 17s left  2 retried
+```
+
+At the end, the pipeline prints a summary showing each step's result and time. When an error occurs, it says what happened and how to fix it:
+
+```
+  ✗ Model llama3.1:8b not found. Run: ollama pull llama3.1:8b
+    Log: logs/categorize_reviews_20261019_221826.log
+```
+
+Retries and other detail go to the log file in `logs/`, not the screen. To follow a long run from another terminal: `tail -f logs/$(ls -t logs | head -1)`. When output isn't a terminal (for example, redirected to a file), the progress bar prints one plain line every 10% instead. Set `NO_COLOR=1` to turn colours off.
+
+**Running overnight?** Start it with `caffeinate -i python pipeline.py --app myapp` so the Mac doesn't sleep. If it's interrupted anyway, run the same command to resume.
+
 **How long?** Scraping takes about a minute per 5,000 reviews. Categorizing with the default 7B local model takes about 2 seconds per review on an Apple Silicon Mac, so 1,000 reviews is about 35 minutes. By default, 5-star reviews are skipped, so usually only a third or so of the scraped reviews get categorized.
 
 ## 4. Stop, resume, restart
 
 | You want to | Do this |
 |---|---|
-| **Stop** a run | Press **Ctrl+C**. Every finished review is already saved; it prints "Stopped. Run again to continue." (exit code 130). |
+| **Stop** a run | Press **Ctrl+C**. Every finished review is already saved; it tells you how far it got (exit code 130). |
 | **Resume** | Run the same command again. It skips every review already in `reviews_categorized.csv` and carries on. |
 | **Pick up new reviews later** | Run `python pipeline.py --app myapp` again. It re-scrapes, and only reviews it hasn't seen are categorized. |
 | **Re-categorize without re-scraping** | `python pipeline.py --app myapp --skip-scrape` |
@@ -214,14 +253,14 @@ CSVs are UTF-8 with a BOM, so Excel shows non-Latin scripts and emoji correctly.
 
 | Message (exit code) | Fix |
 |---|---|
-| `App profile not found: apps/x.toml` (2) | Run `python new_app.py ...` first, or check the `--app` name. |
+| `App profile not found: apps/x.toml` / `No app chosen` (2) | Check the `--app` name (the message lists the available ones), or run `python new_app.py ...`. |
 | `Invalid config: ...` (2) | The message names the key to fix. |
 | `App not found: com.x.y` (3) | Check `app_id` against the Play Store URL. |
-| `Run scrape_reviews.py first.` / `Run categorize_reviews.py first.` (3) | Run the earlier step, or use `pipeline.py`. |
+| `No clean reviews yet` / `No categorized reviews yet` (3) | Run the earlier step (the fix line shows the command), or use `pipeline.py`. |
 | `Ollama is not running...` (4) | Open the Ollama app, or run `brew services start ollama` (or `ollama serve`). |
 | `Model ... not found. Run: ollama pull ...` (4) | Run the command shown. |
-| `Close reviews_categorized.csv in Excel and run again` (1) | Excel locks open files; close it. |
-| `Unexpected error, details in logs/...` (1) | The log file has the full error. |
+| `reviews_categorized.csv is locked` (1) | Excel locks open files; close it and run again. |
+| `Unexpected error: ...` (1) | The `Log:` line points to the full details. |
 | `Single-file dashboard skipped` | Build the web app once: `cd web && npm install && npm run build`. |
 | Local dashboard says "No apps yet" | Run `build_dashboard.py` (or the pipeline) for at least one app. |
 
@@ -246,6 +285,7 @@ If Google changes its site and the library breaks, write a replacement `sources/
 config.toml             shared settings
 apps/                   one profile per app (_template.toml is the starting point)
 common.py               config loading, logging, CSV helpers, exit codes
+ui.py                   terminal output: stage headers, progress bars, errors
 scrape_reviews.py       step 1: fetch and clean
 categorize_reviews.py   step 2: categorize (resumable)
 build_dashboard.py      step 3: dashboard data and single-file HTML

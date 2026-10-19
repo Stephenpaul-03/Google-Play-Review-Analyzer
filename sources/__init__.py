@@ -4,7 +4,8 @@ scrape_reviews.py never imports a scraping library directly. It loads the module
 [scrape] source in config.toml (sources/<name>.py) and uses only this contract:
 
     lookup(app_id: str, lang: str, country: str) -> dict
-        {"title": str, "installs": str}. Raise AppNotFound if the app does not exist.
+        {"title": str, "installs": str, "developer": str, "reviews": int (written reviews, 0 if unknown)}.
+        Raise AppNotFound if the app does not exist.
     fetch_page(app_id: str, lang: str, country: str, page_size: int, token) -> (list[dict], token | None)
         One page of the newest reviews (raw, as the source returns them). Pass the returned
         token back to get the next page; None means there are no more pages.

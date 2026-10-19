@@ -11,8 +11,9 @@ import sys
 import time
 from collections import Counter
 
+import ui
 from common import (EXIT_CONFIG, EXIT_ENGINE, EXIT_MISSING_INPUT, EXIT_STOPPED, EXIT_UNEXPECTED, UNCLASSIFIED,
-                    data_dir, fail, load_config, log, parse_args, read_csv, run, setting, setup_logging,
+                    data_dir, fail, load_config, log, parse_args, read_csv, run, setting, setup_logging, short,
                     utc_now_iso, write_csv)
 from engines import AttemptFailed, EngineUnavailable, load_engine
 
@@ -24,7 +25,6 @@ SUMMARY_COLUMNS = ["category", "review_count", "percent", "avg_rating", "total_t
 SENTIMENTS = {"negative", "mixed", "neutral", "positive"}
 MAX_UNCLASSIFIED_IN_A_ROW = 5
 RETRY_SLEEP_SEC = 2
-PROGRESS_EVERY = 25
 EXCEL_LOCKED = "Close reviews_categorized.csv in Excel and run again"
 
 
@@ -54,8 +54,9 @@ def validate_answer(answer: dict, category_ids: list[str]) -> dict:
             "sentiment": answer["sentiment"], "summary": summary, "error": ""}
 
 
-def classify_review(engine, cfg: dict, review: dict) -> dict:
-    """Classify one review with retries; never raises for a bad answer (returns an unclassified row)."""
+def classify_review(engine, cfg: dict, review: dict) -> tuple[dict, int]:
+    """Classify one review with retries; never raises for a bad answer (returns an unclassified row).
+    Returns the row and the number of attempts used."""
     categories = cfg["categories"]
     ids = [c["id"] for c in categories]
     attempts = 1 + int(cfg.get("classify", {}).get("max_retries", 2))
@@ -63,6 +64,7 @@ def classify_review(engine, cfg: dict, review: dict) -> dict:
     for attempt in range(attempts):
         try:
             result = validate_answer(engine.classify(cfg, review, categories), ids)
+            used = attempt + 1
             break
         except (AttemptFailed, ValueError) as e:
             error = str(e)
@@ -72,10 +74,11 @@ def classify_review(engine, cfg: dict, review: dict) -> dict:
     else:
         result = {"primary_category": UNCLASSIFIED, "secondary_categories": "", "is_complaint": "",
                   "sentiment": "", "summary": "", "error": error[:500]}
+        used = attempts
     row = {key: review.get(key, "") for key in ("review_id", "country", "rating", "review_date", "app_version",
                                                 "thumbs_up", "text")}
     row.update(result, model=engine.label(cfg), categorized_at=utc_now_iso())
-    return row
+    return row, used
 
 
 def build_summary(rows: list[dict]) -> list[dict]:
@@ -105,8 +108,8 @@ def warn_changed_categories(done_rows: list[dict], category_ids: list[str]) -> N
     used |= {s for r in done_rows for s in r["secondary_categories"].split(";") if s}
     stale = sorted(used - set(category_ids) - {UNCLASSIFIED})
     if stale:
-        log.warning("Categories in reviews_categorized.csv but not in the app profile: %s. "
-                    "Run with --fresh to recategorize everything.", ", ".join(stale))
+        ui.warn(f"Earlier results use categories no longer in the profile ({', '.join(stale)}); "
+                "run with --fresh to recategorize everything")
 
 
 def load_and_check_engine(cfg: dict):
@@ -131,7 +134,7 @@ def start_fresh(out_path) -> None:
     if out_path.exists():
         backup = out_path.with_name(f"reviews_categorized.{time.strftime('%Y%m%d_%H%M%S')}.bak.csv")
         out_path.rename(backup)
-        log.info("Started fresh; previous results kept in %s", backup.name)
+        ui.info(f"Starting fresh; previous results kept in {backup.name}")
 
 
 def main() -> None:
@@ -139,31 +142,39 @@ def main() -> None:
     args = parse_args("Categorize clean reviews.", extra=lambda p: p.add_argument(
         "--fresh", action="store_true", help="recategorize everything (the old file is kept as a .bak.csv)"))
     setup_logging("categorize_reviews")
+    ui.stage("Categorizing reviews")
     cfg = load_config(args.config, args.app)
     engine = load_and_check_engine(cfg)
+    ui.field("Engine", f"{cfg.get('classify', {}).get('engine', 'ollama')} · {engine.label(cfg)}")
+    ui.field("Categories", f"{len(cfg['categories'])} from apps/{cfg['profile_name']}.toml")
 
     out_dir = data_dir(cfg)
     clean_path, out_path = out_dir / "reviews_clean.csv", out_dir / "reviews_categorized.csv"
     summary_path = out_dir / "category_summary.csv"
     if not clean_path.exists():
-        fail(EXIT_MISSING_INPUT, "Run scrape_reviews.py first.")
+        fail(EXIT_MISSING_INPUT, "No clean reviews yet", f"run: python scrape_reviews.py --app {cfg['profile_name']}")
     reviews = read_csv(clean_path)
     if args.fresh:
         try:
             start_fresh(out_path)
         except PermissionError:
-            fail(EXIT_UNEXPECTED, EXCEL_LOCKED)
+            fail(EXIT_UNEXPECTED, "reviews_categorized.csv is locked", "close it in Excel and run again")
 
     done_rows = read_csv(out_path) if out_path.exists() else []
     done_ids = {r["review_id"] for r in done_rows}
     warn_changed_categories(done_rows, [c["id"] for c in cfg["categories"]])
     todo = [r for r in reviews if r["review_id"] not in done_ids]
+    remaining = len(todo)
     if args.limit is not None:
         todo = todo[:args.limit]
+    ui.field("Reviews", f"{ui.number(len(reviews))} clean · {ui.number(len(done_ids))} already done · "
+                        f"{ui.bold(ui.number(len(todo)))} to do now"
+                        + (ui.dim(f" (--limit; {ui.number(remaining)} left in total)") if len(todo) < remaining else ""))
     log.info("Resuming: %d already done, %d to go", len(done_ids), len(todo))
 
     new_file = not out_path.exists()
-    started, in_a_row = time.monotonic(), 0
+    in_a_row = retried = failed = 0
+    bar = ui.Progress("Progress", len(todo)) if todo else None
     try:
         with open(out_path, "w" if new_file else "a", encoding="utf-8-sig" if new_file else "utf-8",
                   newline="") as f:
@@ -172,35 +183,51 @@ def main() -> None:
                 writer.writeheader()
             for i, review in enumerate(todo, 1):
                 log.debug("review %s: %s", review["review_id"], review["text"][:80])
-                row = classify_review(engine, cfg, review)
+                row, attempts = classify_review(engine, cfg, review)
                 writer.writerow(row)
                 f.flush()
+                retried += attempts > 1
+                failed += row["primary_category"] == UNCLASSIFIED
                 in_a_row = in_a_row + 1 if row["primary_category"] == UNCLASSIFIED else 0
+                notes = " · ".join(n for n in (f"{retried} retried" if retried else "",
+                                               f"{failed} failed" if failed else "") if n)
+                bar.update(i, notes)
                 if in_a_row >= MAX_UNCLASSIFIED_IN_A_ROW:
+                    bar.finish()
                     try:
                         engine.check(cfg)
                         message = engine.UNAVAILABLE_HINT
                     except EngineUnavailable as e:
                         message = str(e)
-                    fail(EXIT_ENGINE, f"{MAX_UNCLASSIFIED_IN_A_ROW} reviews in a row failed. {message}")
-                if i % PROGRESS_EVERY == 0 or i == len(todo):
-                    avg = (time.monotonic() - started) / i
-                    log.info("%d / %d (%.0f%%), %.1fs per review, about %.0f min left",
-                             i, len(todo), i / len(todo) * 100, avg, avg * (len(todo) - i) / 60)
+                    fail(EXIT_ENGINE, f"{MAX_UNCLASSIFIED_IN_A_ROW} reviews in a row failed, so the run stopped",
+                         f"{message} Then run the same command to continue.")
     except PermissionError:
-        fail(EXIT_UNEXPECTED, EXCEL_LOCKED)
+        if bar:
+            bar.finish()
+        fail(EXIT_UNEXPECTED, "reviews_categorized.csv is locked", "close it in Excel and run again")
     except KeyboardInterrupt:
-        print("\nStopped. Run again to continue.")
+        if bar:
+            bar.finish()
+        ui.warn(f"Stopped after {ui.number(bar.done if bar else 0)} of {ui.number(len(todo))}. "
+                "Everything finished is saved; run the same command to continue.")
         sys.exit(EXIT_STOPPED)
 
+    elapsed = bar.finish() if bar else 0
     all_rows = read_csv(out_path)
     try:
         write_csv(summary_path, SUMMARY_COLUMNS, build_summary(all_rows) if all_rows else [])
     except PermissionError:
-        fail(EXIT_UNEXPECTED, "Close category_summary.csv in Excel and run again")
-    unclassified = sum(1 for r in all_rows if r["primary_category"] == UNCLASSIFIED)
-    print(f"\nCategorized {len(todo)} reviews this run; {len(all_rows)} in total ({unclassified} unclassified).")
-    print(f"  wrote {out_path}\n  wrote {summary_path}")
+        fail(EXIT_UNEXPECTED, "category_summary.csv is locked", "close it in Excel and run again")
+    if todo:
+        ui.ok(f"Categorized {ui.number(len(todo))} reviews in {ui.duration(elapsed)}"
+              + (ui.yellow(f" ({failed} could not be classified)") if failed else ""))
+    else:
+        ui.ok("Nothing new to categorize")
+    labels = {c["id"]: c["label"] for c in cfg["categories"]}
+    top = [s for s in build_summary(all_rows) if s["category"] not in ("other", UNCLASSIFIED)][:3] if all_rows else []
+    if top:
+        ui.field("Top", " · ".join(f"{labels.get(s['category'], s['category'])} {s['percent']}%" for s in top))
+    ui.ok(f"Saved {short(out_path)} ({ui.number(len(all_rows))} reviews) and {summary_path.name}")
 
 
 if __name__ == "__main__":
