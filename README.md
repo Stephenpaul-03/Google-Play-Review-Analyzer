@@ -4,12 +4,7 @@ Turn an app's public Google Play reviews into a categorized, filterable dashboar
 
 It pulls the reviews, cleans them, and has a model sort every complaint into **your own categories** (for example your product's module names). You can then explore the results in a React dashboard or export them to Excel. It runs entirely on your machine: reviews are categorized by a free local model (Ollama), so nothing is sent to an outside AI service.
 
-```
-                apps/myapp.toml   (which app, which countries, your categories)
-                       │
- Google Play ──► scrape_reviews.py ──► categorize_reviews.py ──► build_dashboard.py ──► dashboard
-                 fetch + clean          one model call per review   JSON + single-file HTML   (web/)
-```
+![Review pipeline: Google Play reviews are fetched and cleaned, categorized with local AI, and built into an interactive dashboard using an app profile.](docs/images/review-pipeline.png)
 
 Each stage sits behind a small plug-in interface, so any of them can be replaced:
 
